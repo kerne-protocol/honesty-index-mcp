@@ -1,0 +1,67 @@
+name: Publish to the MCP Registry
+
+# Publishes server.json to registry.modelcontextprotocol.io.
+#
+# AUTHENTICATION: GitHub OIDC, not a device flow and not a stored token.
+# The `io.github.kerne-protocol/*` namespace is owned by this organisation, and
+# the registry verifies that by checking the OIDC claim minted for a workflow
+# running in a repository this org owns. That means there is no secret to
+# create, rotate or leak, and it means a publish can only originate from this
+# repository.
+#
+# `id-token: write` is what allows the OIDC token to be minted. Without it the
+# login step fails with a message that reads like a network error, which is why
+# it is called out here rather than left as a line in the permissions block.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server.json'
+      - '.github/workflows/publish.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: mcp-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mcp-publisher
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+          chmod +x mcp-publisher
+          ./mcp-publisher --version
+
+      - name: Log in with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish
+
+      # A 200 from the publish endpoint is not evidence that a stranger can find
+      # the server. Read it back over the public API, unauthenticated, and fail
+      # if it is not there. Same rule the solhonesty mirror runs under: the
+      # published copy is checked over the public URL rather than trusted from
+      # the write path.
+      - name: Read it back over the public API
+        run: |
+          set -euo pipefail
+          NAME=$(node -e "console.log(require('./server.json').name)")
+          sleep 5
+          BODY=$(curl -fsS "https://registry.modelcontextprotocol.io/v0/servers?search=$NAME")
+          echo "$BODY"
+          echo "$BODY" | grep -q "\"$NAME\"" \
+            || { echo "PUBLISHED BUT NOT LISTED: $NAME is not returned by a public search"; exit 1; }

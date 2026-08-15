@@ -1,0 +1,34 @@
+name: Probe the live server
+
+# The README in this repository describes a server that runs somewhere else, so
+# it can become wrong without anybody touching this repository. probe.mjs runs
+# the real handshake against the real endpoint and exits non-zero if the live
+# tool list and the documented one have drifted apart in EITHER direction: a
+# tool that disappeared, or a tool that appeared and was never written down.
+#
+# Daily rather than hourly on purpose. The thing being watched is a contract,
+# not a number: the figures move every hour by design and that is not a failure.
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node probe.mjs
+      - name: Machine readable, for the log
+        if: always()
+        run: node probe.mjs --json || true

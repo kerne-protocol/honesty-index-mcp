@@ -1,0 +1,18 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.kerne-protocol/honesty-index",
+  "title": "Kerne Honesty Index",
+  "description": "Advertised versus realized yield for stablecoin vaults, signed hourly, reproducible from chain.",
+  "version": "1.0.0",
+  "websiteUrl": "https://kerne.fi/honesty-index",
+  "repository": {
+    "url": "https://github.com/kerne-protocol/honesty-index-mcp",
+    "source": "github"
+  },
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://kerne.fi/api/mcp"
+    }
+  ]
+}
