@@ -1,23 +1,22 @@
 # honesty-index-mcp
 
-**Advertised versus realized yield for stablecoin vaults, as a Model Context
-Protocol server. Remote, no key, no account, nothing to install.**
+**Read-only Kerne data on Base as a Model Context Protocol server: signed proof
+of reserves for kUSD, a signed reference quote for a covered call on a tokenized
+stock, a quote checker, and live vault state. Remote, no key, no account,
+nothing to install.**
 
 ```
 https://kerne.fi/api/mcp
 ```
 
-Streamable HTTP. Stateless. Free, and it stays free: the numbers behind it are
-already served without a key at
-[kerne.fi/api/honesty-index](https://kerne.fi/api/honesty-index), and putting
-them behind one would defeat the argument the board is making.
+Streamable HTTP. Stateless. Read-only: nothing this server offers can move funds.
 
 ## Add it
 
 Claude Code:
 
 ```
-claude mcp add --transport http kerne-honesty-index https://kerne.fi/api/mcp
+claude mcp add --transport http kerne https://kerne.fi/api/mcp
 ```
 
 Anything that reads a config file:
@@ -25,7 +24,7 @@ Anything that reads a config file:
 ```json
 {
   "mcpServers": {
-    "kerne-honesty-index": {
+    "kerne": {
       "type": "http",
       "url": "https://kerne.fi/api/mcp"
     }
@@ -33,64 +32,35 @@ Anything that reads a config file:
 }
 ```
 
-Registry name: `io.github.kerne-protocol/honesty-index`
+Registry name: `io.github.kerne-protocol/honesty-index`. The name is historical
+(see the last section). Registry names cannot be renamed, and a second name would
+list the same endpoint twice, so the entry keeps it.
 
 ## What it answers
 
-The [Kerne Honesty Index](https://kerne.fi/honesty-index) is an hourly, signed
-board comparing what synthetic and yield-bearing dollars **advertise** against
-what their holders actually **realized**, computed from ERC-4626 share price
-growth on chain over a thirty day window. Kerne Protocol publishes it, is
-measured on it, and lists its own row first by rule.
-
 | Tool | What it returns |
 | --- | --- |
-| `list_rows` | The roster: key, protocol, symbol, chain, contract address. Cheap. Call it first. |
-| `get_board` | Every row with its advertised figure, its realized figure, the stated gap, the delivery ratio, plus the board summary and the snapshot's provenance. |
-| `get_row` | One row with everything behind it: the verbatim advertised quote and the first-party page it was read from, the capture date, both block heights, both share prices, the arithmetic, and the exact `eth_call` payloads to reproduce it. |
-| `get_methodology` | The measurement, the comparability rules that decide when a gap may be stated at all, the ten day capture expiry, and what the board deliberately does not cover. |
-| `get_corrections` | The append-only log of every time the board changed something it had stated about a named company, with both values and the rule that stops a repeat. |
-| `get_right_of_reply` | The free, permanent, unedited reply slot every measured protocol has on its own row, its terms, and every reply received. |
+| `get_signed_reserves` | The latest signed proof of reserves for kUSD, the Kerne stablecoin on Base: outstanding kUSD, the USDC held in each PSM contract, the solvency ratio, the skUSD share price and the hedge account, read on chain at one pinned block and signed every 15 minutes by a key that holds no funds. The server checks the hash and the signer and says whether they checked. |
+| `get_stock_quote` | The latest signed reference quote for a one week covered call on TSLAc (Coinbase tokenized Tesla stock on Base): spot from the Chainlink feed, realized volatility, a strike near 20 delta, the premium, the expiry and how long the quote is valid. A reference price only: not an offer, not advice, not for US persons, and nothing executes from it. |
+| `verify_stock_quote` | Checks a quote: the hash against the signed string, both signatures (EIP-191 over the document, EIP-712 over the on-chain Quote struct) against the published signer, expiry, and whether the price round it is bound to is still the latest. No arguments checks the latest quote; or pass a quote someone else gave you. |
+| `get_vault_state` | The covered call vault for TSLAc on Base, read live in one call pinned to one block: epoch, whether an epoch is live, whether sales are paused, deposit cap, total assets, the limits it enforces, the keeper, the latest price round, and what currently stops an epoch from opening. The vault is unaudited. |
 
-One resource, `kerne://honesty-index/snapshot`, is the raw signed snapshot
-including the canonical payload, its sha256 attestation hash and the EIP-191
-signature over it.
+No resources and no prompts. Two tools take an optional `include_signed_bytes`
+flag that returns the exact signed string, so you can check the signature
+yourself instead of trusting the server's check.
 
-## Three things a model should know before quoting a row
+## Two things a model should know before quoting a result
 
-These are in the server's `instructions` too, because getting them wrong
-produces a confident false statement about a named company.
+These are in the server's `instructions` too.
 
-1. **A null gap is not zero.** It means the two figures cover different periods,
-   or the advertised capture is older than the freshness limit, or the protocol
-   publishes no first-party figure at all. Absence is never a finding of
-   non-payment.
-2. **Rank on the delivery ratio, not the point gap.** A percentage point gap is
-   not comparable across products at different rates, and this board spans
-   several.
-3. **A protocol in an announced wind down paying nothing is behaving
-   correctly.** Read the `status` field beside the figure.
+1. **A signed result can be stale.** Every signed result says whether its
+   signature checked and how old it is. Treat `verified: false` or
+   `is_fresh: false` as not current.
+2. **A quote is not a trade.** `get_stock_quote` is a reference price. Nothing
+   executes from it, and `get_vault_state` says whether deposits are open at
+   all (read `deposits_open`).
 
-The board scores one axis. It is not an audit, not a rating, not a solvency
-opinion, and it says nothing about the hedge or the reserves of any protocol on
-it, including Kerne's.
-
-## Do not take the server's word for it
-
-Every figure it serves is re-derivable from public chain data by a program that
-shares no code with the one that produced it:
-
-```
-npx -y github:kerne-protocol/realized-apy check
-```
-
-That is a second implementation with its own decoder, its own arithmetic, and
-keccak256 and secp256k1 written from scratch rather than taken from a library.
-It re-reads every row at the block heights the signed snapshot names and prints
-PASS or FAIL. Method, tolerances and what happens if you get a different answer:
-[kerne.fi/honesty-index/reproduce](https://kerne.fi/honesty-index/reproduce).
-
-## Do not take this README's word for it either
+## Do not take this README's word for it
 
 This file describes a live server, and a live server can quietly stop matching
 its documentation. So check it:
@@ -102,22 +72,24 @@ node probe.mjs
 It runs the real handshake against the real endpoint, lists what is actually
 offered, makes one real call, and **exits non-zero if the live tool list and the
 table above have drifted apart in either direction**. No dependencies, Node 20 or
-later. It runs in CI here on a schedule for the same reason.
-
-## Right of reply
-
-Every protocol this board publishes a number about has a free, permanent,
-unedited reply slot on its own row. Published verbatim, never edited, never
-removed, published whether or not it agrees with us, and we never answer inside
-one. Nothing is charged for it and no commercial conversation is a condition of
-it. Terms and form:
-[kerne.fi/honesty-index/reproduce#right-of-reply](https://kerne.fi/honesty-index/reproduce#right-of-reply).
+later. It runs in CI here daily for the same reason. Its user agent says
+`kerne-selftest`, so the endpoint's public usage counts
+([kerne.fi/api/mcp/usage](https://kerne.fi/api/mcp/usage)) leave it out.
 
 ## What is in this repository
 
 `server.json` is the registry descriptor. `probe.mjs` is the check above. The
-server itself is a route on kerne.fi rather than a package here, because it is a
-remote server: there is nothing for you to run, and a copy of the handler in this
-repository would be a second thing to keep in step with the first.
+server itself runs on kerne.fi rather than as a package here, because it is a
+remote server: there is nothing for you to run.
+
+## History
+
+Until 2026-10-28 this endpoint served the Kerne Honesty Index: six tools
+(`list_rows`, `get_board`, `get_row`, `get_methodology`, `get_corrections`,
+`get_right_of_reply`) over an hourly board of advertised versus realized
+stablecoin yield. Those tools are retired, because the collector behind the
+board was deleted with its server on that date. Calling one now returns a tool
+error that says so. Version 2.0.0 of the registry entry describes the server as
+it is today.
 
 MIT licensed.
